@@ -1,6 +1,6 @@
-train: train/images
-val: valid/images
-test: test/images
+train: ../train/images
+val: ../valid/images
+test: ../test/images
 
 nc: 1
 names: ['logo_tdtu']
@@ -8,6 +8,6 @@ names: ['logo_tdtu']
 roboflow:
   workspace: sunshine1201
   project: logo-tdtu-aroqs
-  version: 2
+  version: 3
   license: CC BY 4.0
-  url: https://universe.roboflow.com/sunshine1201/logo-tdtu-aroqs/dataset/2
+  url: https://universe.roboflow.com/sunshine1201/logo-tdtu-aroqs/dataset/3

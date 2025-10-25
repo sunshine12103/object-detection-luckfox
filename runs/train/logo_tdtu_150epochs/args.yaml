@@ -4,7 +4,7 @@ model: yolov8n.pt
 data: LOGO-TDTU.v2i.yolov8/data.yaml
 epochs: 150
 time: null
-patience: 30
+patience: 50
 batch: 16
 imgsz: 640
 save: true
@@ -70,7 +70,7 @@ simplify: true
 opset: null
 workspace: null
 nms: false
-lr0: 0.01
+lr0: 0.001
 lrf: 0.01
 momentum: 0.937
 weight_decay: 0.0005

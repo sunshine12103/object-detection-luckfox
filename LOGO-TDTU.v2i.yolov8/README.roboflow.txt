@@ -1,8 +1,8 @@
 
-LOGO-TDTU - v2 2025-10-22 9:47pm
+LOGO-TDTU - v3 2025-10-25 4:20pm
 ==============================
 
-This dataset was exported via roboflow.com on October 22, 2025 at 2:48 PM GMT
+This dataset was exported via roboflow.com on October 25, 2025 at 9:20 AM GMT
 
 Roboflow is an end-to-end computer vision platform that helps you
 * collaborate with your team on computer vision projects
@@ -17,7 +17,7 @@ visit https://github.com/roboflow/notebooks
 
 To find over 100k other datasets and pre-trained models, visit https://universe.roboflow.com
 
-The dataset includes 18 images.
+The dataset includes 46 images.
 Logo_tdtu are annotated in YOLOv8 format.
 
 The following pre-processing was applied to each image:
