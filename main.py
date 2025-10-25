@@ -1,151 +1,148 @@
+"""
+TDTU Logo Detector - Main Detection Script
+==========================================
+Script chính để detect logo TDTU từ webcam hoặc ảnh
+Tách biệt hoàn toàn khỏi training - chỉ tập trung vào detection
+"""
+
 from ultralytics import YOLO
+import cv2
 import os
 
-# Chọn chế độ hoạt động
-MODE = "train"  # Có thể thay đổi thành "predict", "webcam", hoặc "test"
-
-if MODE == "train":
-    print("Bắt đầu training mô hình YOLOv8 với dataset TDTU logo...")
+def detect_from_webcam():
+    """Detect logo TDTU từ webcam real-time"""
+    print("Chế độ Webcam Detection")
+    print("-" * 40)
     
-    # Load mô hình pretrained
-    model = YOLO("yolov8n.pt")
+    # Kiểm tra mô hình custom đã train
+    custom_model = "runs/train/tdtu_logo_detector/weights/best.pt"
+    alternative_model = "runs/train/logo_tdtu4/weights/best.pt"
     
-    # Train với dataset
-    results = model.train(
-        data='LOGO-TDTU.v2i.yolov8/data.yaml',
-        epochs=50,                    # Giảm epochs để test nhanh
-        imgsz=640,
-        batch=8,                      # Giảm batch size cho máy yếu
-        device='cpu',                 # Dùng CPU
-        project='runs/train',
-        name='logo_tdtu',
-        save=True,
-        plots=True
-    )
-    
-elif MODE == "predict":
-    # Predict với mô hình đã train
-    model_path = 'runs/train/logo_tdtu/weights/best.pt'
-    if os.path.exists(model_path):
-        model = YOLO(model_path)
-        results = model.predict(
-            source='LOGO-TDTU.v2i.yolov8/test/images',
-            save=True,
-            project='runs/predict',
-            name='results'
-        )
+    if os.path.exists(custom_model):
+        print(f"Sử dụng mô hình custom: {custom_model}")
+        model = YOLO(custom_model)
+    elif os.path.exists(alternative_model):
+        print(f"Sử dụng mô hình đã train: {alternative_model}")
+        model = YOLO(alternative_model)
     else:
-        print("Chưa có mô hình trained! Hãy chạy training trước.")
-
-elif MODE == "webcam":
-    # Predict từ webcam
-    model_path = 'runs/train/logo_tdtu/weights/best.pt'
-    if os.path.exists(model_path):
-        model = YOLO(model_path)
-        from ultralytics import YOLO
-import cv2
-
-def train_tdtu_model():
-    """Train model với dataset TDTU logo"""
-    print("🎯 Bắt đầu training model TDTU...")
-    model = YOLO("yolov8n.pt")
-    
-    # Train model
-    results = model.train(
-        data="LOGO-TDTU.v2i.yolov8/data.yaml",
-        epochs=50,
-        imgsz=640,
-        patience=10,
-        save=True,
-        device='cpu'
-    )
-    print("✅ Training hoàn thành!")
-    return results
-
-def webcam_detect():
-    """Detect logo TDTU từ webcam"""
-    print("📹 Đang khởi động webcam detection...")
-    
-    # Load model (có thể dùng model đã train hoặc pretrained)
-    try:
-        # Thử load model đã train trước
-        model = YOLO("runs/detect/train/weights/best.pt")
-        print("✅ Đã load model đã train!")
-    except:
-        # Nếu chưa có model train, dùng pretrained
+        print("Không tìm thấy mô hình custom, sử dụng mô hình base YOLOv8")
+        print("Hãy chạy train_tdtu_logo.py để train mô hình custom")
         model = YOLO("yolov8n.pt")
-        print("⚠️  Dùng pretrained model. Nên train model trước để detect logo TDTU chính xác hơn!")
     
-    # Mở webcam
-    cap = cv2.VideoCapture(0)
+    print("Bắt đầu detect từ webcam...")
+    print("Nhấn 'q' hoặc ESC để thoát")
     
-    if not cap.isOpened():
-        print("❌ Không thể mở webcam!")
+    # Detect từ webcam
+    try:
+        results = model.predict(
+            source=0,  # Webcam
+            show=True,  # Hiển thị real-time
+            save=False,  # Không lưu video
+            conf=0.3,  # Confidence threshold thấp hơn để detect dễ hơn
+            verbose=False  # Ít thông tin debug
+        )
+        print("Webcam detection hoàn thành!")
+    except Exception as e:
+        print(f"Lỗi khi detect từ webcam: {e}")
+
+def detect_from_image(image_path):
+    """Detect logo TDTU từ ảnh"""
+    print("Chế độ Image Detection")
+    print("-" * 40)
+    
+    if not os.path.exists(image_path):
+        print(f"Không tìm thấy ảnh: {image_path}")
         return
     
-    print("🎓 TDTU Logo Detection đang chạy...")
-    print("📝 Nhấn 'q' để thoát")
+    # Kiểm tra mô hình custom
+    custom_model = "runs/train/tdtu_logo_detector/weights/best.pt"
+    alternative_model = "runs/train/logo_tdtu4/weights/best.pt"
     
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # Detect
-        results = model(frame, conf=0.5, verbose=False)
-        
-        # Vẽ kết quả
-        annotated_frame = results[0].plot()
-        
-        # Thêm text
-        cv2.putText(annotated_frame, "TDTU Logo Detection - Nhan 'q' de thoat", 
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        # Hiển thị
-        cv2.imshow('TDTU Logo Detection', annotated_frame)
-        
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    if os.path.exists(custom_model):
+        print(f"Sử dụng mô hình custom: {custom_model}")
+        model = YOLO(custom_model)
+    elif os.path.exists(alternative_model):
+        print(f"Sử dụng mô hình đã train: {alternative_model}")
+        model = YOLO(alternative_model)
+    else:
+        print("Sử dụng mô hình base YOLOv8")
+        model = YOLO("yolov8n.pt")
     
-    cap.release()
-    cv2.destroyAllWindows()
-    print("👋 Đã đóng webcam!")
+    print(f"Đang detect ảnh: {image_path}")
+    
+    try:
+        # Detect từ ảnh
+        results = model.predict(
+            source=image_path,
+            show=True,  # Hiển thị kết quả
+            save=True,  # Lưu kết quả
+            conf=0.3,  # Confidence threshold
+            project="runs/detect",  # Thư mục lưu
+            name="image_results"  # Tên folder
+        )
+        
+        print("Detect hoàn thành! Kết quả được lưu trong runs/detect/image_results/")
+        
+        # Hiển thị thông tin detect
+        for result in results:
+            boxes = result.boxes
+            if boxes is not None:
+                print(f"Phát hiện {len(boxes)} đối tượng!")
+                for i, box in enumerate(boxes):
+                    conf = box.conf.item()
+                    print(f"   • Đối tượng {i+1}: Confidence = {conf:.2f}")
+            else:
+                print("Không phát hiện đối tượng nào!")
+                
+    except Exception as e:
+        print(f"Lỗi khi detect ảnh: {e}")
 
 def main():
     """Menu chính"""
-    print("🎓 TDTU Logo Detector - YOLOv8")
-    print("=" * 40)
+    print("TDTU Logo Detector - Main Detection Script")
+    print("=" * 50)
+    print("Chỉ tập trung vào detection - không train")
+    print("Để train mô hình, hãy chạy: python train_tdtu_logo.py")
+    print("=" * 50)
     
     while True:
-        print("\n🔧 Chọn chức năng:")
-        print("1. Train model với dataset TDTU")
-        print("2. Detect logo từ webcam")
-        print("3. Test predict từ URL")
+        print("\nChọn chế độ detect:")
+        print("1. Detect từ webcam (real-time)")
+        print("2. Detect từ ảnh local")
+        print("3. Chuyển sang training (train_tdtu_logo.py)")
         print("4. Thoát")
         
-        choice = input("➡️  Nhập lựa chọn (1-4): ").strip()
+        choice = input("\nNhập lựa chọn (1-4): ").strip()
         
         if choice == "1":
-            train_tdtu_model()
+            detect_from_webcam()
+        
         elif choice == "2":
-            webcam_detect()
+            image_path = input("Nhập đường dẫn ảnh: ").strip()
+            if image_path:
+                detect_from_image(image_path)
+            else:
+                print("Đường dẫn không hợp lệ!")
+            
         elif choice == "3":
-            # Test predict từ URL như code cũ
-            model = YOLO("yolov8n.pt")
-            results = model.predict(source="https://nextcity.org/images/made/219951734_2838e034bb_o_840_630_80.jpg")
-            print(results)
+            print("Để train mô hình, hãy chạy lệnh:")
+            print("   python train_tdtu_logo.py")
+            
+            # Hỏi có muốn chạy luôn không
+            run_now = input("Chạy training ngay bây giờ? (y/n): ").strip().lower()
+            if run_now == 'y':
+                try:
+                    import subprocess
+                    subprocess.run(["python", "train_tdtu_logo.py"])
+                except Exception as e:
+                    print(f"Không thể chạy script training: {e}")
+        
         elif choice == "4":
-            print("👋 Tạm biệt!")
+            print("Tạm biệt!")
             break
+        
         else:
-            print("❌ Lựa chọn không hợp lệ!")
+            print("Lựa chọn không hợp lệ! Vui lòng chọn 1-4.")
 
 if __name__ == "__main__":
     main()
-    if os.path.exists(model_path):
-        model = YOLO(model_path)
-        results = model.val(data='LOGO-TDTU.v2i.yolov8/data.yaml')
-        print(f"mAP50: {results.box.map50:.4f}")
-        print(f"mAP50-95: {results.box.map:.4f}")
-    else:
-        print("Chưa có mô hình trained! Hãy chạy training trước.")
