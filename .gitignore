@@ -1,0 +1,41 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+.env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# YOLOv8 specific
+runs/
+*.pt
+!yolov8n.pt  # Keep the base model
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large model files (except base model)
+*.weights
+*.onnx
+*.engine
+
+# Dataset cache
+*.cache
