@@ -35,7 +35,7 @@ def train_model():
 
 def validate_model():
     try:
-        print("\n🔍 Đang validate model...")
+        print("\n Đang validate model...")
         print("=" * 50)
         
         # Tìm model mới nhất
@@ -115,6 +115,6 @@ if __name__ == "__main__":
         
         # 3. Test model
         test_results = test_model()
-        
-        print("\n Hoàn thành toàn bộ quá trình training, validation và testing!")    
-    print("\n✨ Hoàn thành!")
+
+        print("\nHoàn thành toàn bộ quá trình training, validation và testing!")
+    print("\nHoàn thành!")

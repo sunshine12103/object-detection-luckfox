@@ -19,11 +19,10 @@ class TDTULogoDetector:
         cap = cv2.VideoCapture(0)
         
         if not cap.isOpened():
-            print("Khong the mo webcam!")
+            print("Khong the mo webcam")
             return
-        
-        print("Webcam da san sang!")
-        print("Nhan 'q' de thoat")
+    
+        print("q thoat")
         
         while True:
             ret, frame = cap.read()
@@ -31,10 +30,9 @@ class TDTULogoDetector:
                 print("Khong the doc frame tu webcam!")
                 break
             
-            # Detect objects trong frame
             results = self.model(frame, conf=0.5, verbose=False)
             
-            # Ve ket qua len frame
+            # Ve ket qua len 
             annotated_frame = self.draw_results(frame, results)
             
             # Hien thi frame
@@ -77,7 +75,7 @@ class TDTULogoDetector:
                         cv2.putText(annotated_frame, label, (x1, y1 - 5),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
                         
-                        print(f"Phat hien logo TDTU! Confidence: {confidence:.2f}")
+                        print(f"Confidence: {confidence:.2f}")
         
         return annotated_frame
 
