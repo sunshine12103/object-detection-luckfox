@@ -103,3 +103,34 @@ Chỉnh sửa `data.yaml` để thay đổi đường dẫn dataset hoặc số 
 ## 📄 License
 
 MIT License - xem file LICENSE để biết thêm chi tiết.
+
+---
+
+## 🔌 Embedded Deployment (Luckfox Omni 3576)
+
+### Deploy YOLOv8 lên Luckfox với NPU acceleration
+
+**Quick Start:**
+```bash
+# 1. Export ONNX
+python export_onnx.py --model runs/train/logo_tdtu_v5/weights/best.pt --imgsz 320
+
+# 2. Convert to RKNN
+python export_rknn.py --onnx exported_models/best_320.onnx
+
+# 3. Transfer to Luckfox
+scp exported_models/best_320_int8.rknn root@luckfox_ip:/root/
+scp inference_luckfox.py root@luckfox_ip:/root/
+
+# 4. Run on Luckfox
+python inference_luckfox.py --model best_320_int8.rknn --source 0
+```
+
+**Performance:**
+- FPS: 15-25 (INT8, 320x320)
+- Model size: ~2MB
+- NPU accelerated
+
+**Hướng dẫn chi tiết:**
+- [QUICKSTART_LUCKFOX.md](./QUICKSTART_LUCKFOX.md) - Hướng dẫn nhanh
+- [DEPLOYMENT_LUCKFOX.md](./DEPLOYMENT_LUCKFOX.md) - Hướng dẫn đầy đủ + troubleshooting
