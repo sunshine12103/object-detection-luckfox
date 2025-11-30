@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 """
-Logo Detection + Radar Reading
-Detect logo -> Read heart rate & breath rate from radar
+Logo Detection + Radar Reading + Distance Calculation
 """
 import cv2
 import numpy as np
@@ -9,7 +8,6 @@ import time
 from ultralytics import YOLO
 import serial
 import threading
-from collections import deque
 
 class LogoRadarSystem:
     def __init__(self):
@@ -37,6 +35,11 @@ class LogoRadarSystem:
         self.CONF_THRESH = 0.5
         self.SKIP_FRAMES = 2
         
+        # Distance calculation parameters
+        self.logo_real_width = 7.5   # cm
+        self.logo_real_height = 3.0  # cm
+        self.focal_length = 1206.4   # pixels
+        
         # Radar data
         self.heart_rate = 0
         self.breath_rate = 0
@@ -45,7 +48,17 @@ class LogoRadarSystem:
         # Detection state
         self.logo_detected = False
         self.detection_stable_count = 0
-        self.STABLE_THRESHOLD = 5  # Phải detect ổn định 5 frames
+        self.STABLE_THRESHOLD = 5
+    
+    def calculate_distance(self, bbox_width, bbox_height):
+        """Tính khoảng cách từ camera đến logo"""
+        try:
+            distance_by_width = (self.logo_real_width * self.focal_length) / bbox_width
+            distance_by_height = (self.logo_real_height * self.focal_length) / bbox_height
+            distance = (distance_by_width + distance_by_height) / 2
+            return distance
+        except ZeroDivisionError:
+            return 0.0
     
     def read_radar_worker(self):
         """Background thread để đọc radar"""
@@ -53,13 +66,11 @@ class LogoRadarSystem:
             try:
                 data_all = []
                 
-                # Đọc data
                 while self.ser.in_waiting > 0:
                     byte_data = self.ser.read()
                     hex_str = byte_data.hex()
                     data_all.append(hex_str)
                 
-                # Parse data
                 if len(data_all) >= 7:
                     # NHỊP TIM (ID: 85 02)
                     if (int(data_all[2][0], 16)*10 + int(data_all[2][1], 16) == 85) and \
@@ -88,7 +99,7 @@ class LogoRadarSystem:
             return
         
         print("="*60)
-        print("LOGO DETECTION + RADAR SYSTEM")
+        print("LOGO DETECTION + DISTANCE + RADAR SYSTEM")
         print("Press 'q' to quit, 's' to save")
         print("="*60)
         
@@ -137,11 +148,23 @@ class LogoRadarSystem:
                             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                             conf = box.conf[0].cpu().numpy()
                             
+                            # Calculate distance
+                            bbox_width = x2 - x1
+                            bbox_height = y2 - y1
+                            distance = self.calculate_distance(bbox_width, bbox_height)
+                            
                             # Draw box
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            
+                            # Label với confidence
                             label = f'LOGO: {conf:.2f}'
                             cv2.putText(frame, label, (x1, y1-10),
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                            
+                            # Distance label
+                            distance_label = f'{distance:.1f}cm'
+                            cv2.putText(frame, distance_label, (x1, y2+20),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                 
                 # FPS
                 fps_text = f'FPS: {np.mean(fps_list):.1f} | Inf: {inf_time:.1f}ms'
@@ -179,7 +202,7 @@ class LogoRadarSystem:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             # Show
-            cv2.imshow('Logo + Radar Detection', frame)
+            cv2.imshow('Logo + Distance + Radar', frame)
             
             # Keys
             key = cv2.waitKey(1) & 0xFF
@@ -190,6 +213,7 @@ class LogoRadarSystem:
                 cv2.imwrite(filename, frame)
                 print(f"💾 Saved: {filename}")
                 if self.logo_detected:
+                    print(f"   Distance: {distance:.1f}cm")
                     print(f"   Heart: {self.heart_rate} bpm, Breath: {self.breath_rate} /min")
         
         # Cleanup
