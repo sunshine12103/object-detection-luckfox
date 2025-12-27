@@ -21,7 +21,7 @@ class TDTULogoDetector:
         
         # Calibration mode
         self.calibration_mode = False
-        self.known_distance = 52.0   # cm - Khoảng cách calibration
+        self.known_distance = 120.0   # cm - Khoảng cách calibration
         
     def calibrate_camera(self):
         """Chế độ calibration tự động"""
