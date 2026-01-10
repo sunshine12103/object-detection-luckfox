@@ -15,6 +15,9 @@ import numpy as np
 import onnxruntime as ort
 import time
 import serial
+import paho.mqtt.client as mqtt
+import json
+import random
 
 # ============== UART CONFIG ==============
 SERIAL_PORT = "/dev/ttyS2"
@@ -26,6 +29,36 @@ try:
 except Exception as e:
     print(f"❌ UART error: {e}")
     exit(1)
+
+# ============== MQTT CONFIG ==============
+MQTT_BROKER = "mqtt.fuvitech.vn"
+MQTT_PORT = 1883
+MQTT_TOPIC_VITALS = "ambulance/vitals"
+MQTT_TOPIC_VEHICLE = "ambulance/vehicle"
+MQTT_PUBLISH_INTERVAL = 2.0  # Seconds between publishes
+
+# MQTT callbacks
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print(f"✅ MQTT connected to {MQTT_BROKER}:{MQTT_PORT}")
+    else:
+        print(f"❌ MQTT connection failed, rc={rc}")
+
+def on_publish(client, userdata, mid):
+    print(f"📤 MQTT published: {userdata}")
+
+# Setup MQTT client
+mqtt_client = mqtt.Client()
+mqtt_client.on_connect = on_connect
+mqtt_client.on_publish = on_publish
+
+try:
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_start()  # Start background thread
+    print(f"🔗 MQTT connecting to {MQTT_BROKER}:{MQTT_PORT}...")
+except Exception as e:
+    print(f"⚠️ MQTT connection error: {e}")
+    mqtt_client = None
 
 # ============== MODEL CONFIG ==============
 print("Loading ONNX model...")
@@ -71,6 +104,10 @@ x_deviation = 0
 y_max = 0
 last_command = "STOP"
 
+# MQTT timing
+last_mqtt_publish = 0
+last_vehicle_status = None  # Track vehicle status to avoid spam
+
 # ============== HELPER FUNCTIONS ==============
 def letterbox(img, new_shape=(640, 640)):
     """Resize with padding"""
@@ -91,7 +128,23 @@ def letterbox(img, new_shape=(640, 640)):
     return img, r, (dw, dh)
 
 def send_command(cmd):
-    global last_command
+    global last_command, last_vehicle_status
+    
+    # Determine vehicle status
+    if cmd == "STOP":
+        vehicle_status = "stopped"
+    else:  # FORWARD, LEFT, RIGHT
+        vehicle_status = "running"
+    
+    # Publish vehicle status if changed
+    if mqtt_client and vehicle_status != last_vehicle_status:
+        try:
+            payload = {"status": vehicle_status}
+            mqtt_client.publish(MQTT_TOPIC_VEHICLE, json.dumps(payload))
+            print(f"🚗 Vehicle: {vehicle_status}")
+            last_vehicle_status = vehicle_status
+        except Exception as e:
+            print(f"❌ Vehicle MQTT error: {e}")
     
     # Always send turn commands (they're time-based)
     if cmd.startswith("LEFT") or cmd.startswith("RIGHT"):
@@ -118,6 +171,41 @@ def send_command(cmd):
             print(f"❌ UART error: {e}")
             return False
     return True
+
+def publish_vitals():
+    """
+    Publish simulated vital signs to MQTT
+    Heart rate: 79-85 bpm
+    Breathing rate: 17-20 rpm
+    """
+    global last_mqtt_publish
+    
+    # Check if enough time has passed
+    current_time = time.time()
+    if current_time - last_mqtt_publish < MQTT_PUBLISH_INTERVAL:
+        return
+    
+    if mqtt_client is None:
+        return
+    
+    # Generate random vital signs
+    heart_rate = random.randint(79, 85)
+    breathing_rate = random.randint(17, 20)
+    
+    # Create JSON payload
+    payload = {
+        "heartRate": heart_rate,
+        "breathingRate": breathing_rate
+    }
+    
+    # Publish to MQTT
+    try:
+        result = mqtt_client.publish(MQTT_TOPIC_VITALS, json.dumps(payload))
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            print(f"💓 MQTT: {{HR: {heart_rate}, BR: {breathing_rate}}}")
+        last_mqtt_publish = current_time
+    except Exception as e:
+        print(f"❌ MQTT publish error: {e}")
 
 def get_turn_duration(deviation):
     """Tính thời gian rẽ dựa trên độ lệch"""
@@ -214,6 +302,9 @@ def track_logo(boxes, scores, frame_width, frame_height):
     
     else:
         command = "STOP"
+    
+    # Publish vital signs when logo is detected
+    publish_vitals()
     
     return {
         'center': (obj_x_center, obj_y_center),
@@ -330,6 +421,13 @@ finally:
     cap.release()
     cv2.destroyAllWindows()
     ser.close()
+    
+    # Disconnect MQTT
+    if mqtt_client:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        print("📡 MQTT disconnected")
+    
     print("✅ Cleanup complete")
     
     if fps_list:
