@@ -1,3 +1,4 @@
+
 #!/usr/bin/python3
 """
 Logo Following Robot - Luckfox Side
@@ -104,8 +105,9 @@ def send_command(cmd):
             print(f"❌ UART error: {e}")
             return False
     
-    # Only avoid repeating FORWARD/STOP
-    if cmd != last_command:
+    # Always send FORWARD too! (need to resume after auto-stop)
+    # Only filter repeated STOP
+    if cmd == "FORWARD" or cmd != last_command:
         try:
             ser.write((cmd + "\n").encode())
             ser.flush()
