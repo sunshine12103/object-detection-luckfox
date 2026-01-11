@@ -35,7 +35,14 @@ MQTT_BROKER = "mqtt.fuvitech.vn"
 MQTT_PORT = 1883
 MQTT_TOPIC_VITALS = "ambulance/vitals"
 MQTT_TOPIC_VEHICLE = "ambulance/vehicle"
+MQTT_TOPIC_FALL = "ambulance/fall"
 MQTT_PUBLISH_INTERVAL = 2.0  # Seconds between publishes
+
+# Fall Detection Config
+FALL_VELOCITY_THRESHOLD = 0.15  # Vertical velocity threshold (normalized/sec) - lowered for sitting
+FALL_BOTTOM_THRESHOLD = 0.60    # Logo position threshold (60% from top) - lowered
+FALL_CONSECUTIVE_FRAMES = 2     # Consecutive downward frames to confirm - reduced
+FALL_COOLDOWN = 5.0             # Seconds between fall alerts
 
 # MQTT callbacks
 def on_connect(client, userdata, flags, rc):
@@ -107,6 +114,13 @@ last_command = "STOP"
 # MQTT timing
 last_mqtt_publish = 0
 last_vehicle_status = None  # Track vehicle status to avoid spam
+
+# Fall detection tracking
+logo_y_history = []          # Track Y positions over time
+logo_timestamps = []         # Track timestamps
+downward_frame_count = 0     # Count consecutive downward movements
+last_fall_alert = 0          # Timestamp of last fall alert
+fall_detected = False        # Fall state flag
 
 # ============== HELPER FUNCTIONS ==============
 def letterbox(img, new_shape=(640, 640)):
@@ -207,6 +221,123 @@ def publish_vitals():
     except Exception as e:
         print(f"❌ MQTT publish error: {e}")
 
+def check_fall_detection(y_center, frame_height):
+    """
+    Detect fall based on logo trajectory
+    
+    Fall indicators:
+    1. Logo moving downward consistently
+    2. High vertical velocity
+    3. Logo near bottom of frame
+    4. Sudden disappearance after downward movement
+    """
+    global logo_y_history, logo_timestamps, downward_frame_count
+    global last_fall_alert, fall_detected
+    
+    current_time = time.time()
+    
+    # Add current position to history
+    logo_y_history.append(y_center)
+    logo_timestamps.append(current_time)
+    
+    # Keep only last 10 positions (rolling window)
+    if len(logo_y_history) > 10:
+        logo_y_history.pop(0)
+        logo_timestamps.pop(0)
+    
+    # Need at least 3 points for analysis
+    if len(logo_y_history) < 3:
+        return
+    
+    # Calculate vertical velocity (change in Y position)
+    if len(logo_y_history) >= 2:
+        dt = logo_timestamps[-1] - logo_timestamps[-2]
+        if dt > 0:
+            dy = logo_y_history[-1] - logo_y_history[-2]
+            vertical_velocity = dy / dt
+            
+            # DEBUG: Show velocity
+            if abs(vertical_velocity) > 0.05:  # Show significant movements
+                print(f"🔍 Velocity: {vertical_velocity:.3f}, Y: {y_center:.2f}, Count: {downward_frame_count}")
+            
+            # Check if moving downward (y increasing = moving down in image coords)
+            if vertical_velocity > FALL_VELOCITY_THRESHOLD:
+                downward_frame_count += 1
+            else:
+                downward_frame_count = max(0, downward_frame_count - 1)
+    
+    # Fall detection logic
+    if (downward_frame_count >= FALL_CONSECUTIVE_FRAMES and 
+        y_center > FALL_BOTTOM_THRESHOLD and
+        current_time - last_fall_alert > FALL_COOLDOWN):
+        
+        # FALL DETECTED!
+        fall_detected = True
+        last_fall_alert = current_time
+        downward_frame_count = 0  # Reset counter
+        
+        # Publish alert
+        if mqtt_client:
+            try:
+                payload = {"fall": True}
+                mqtt_client.publish(MQTT_TOPIC_FALL, json.dumps(payload))
+                print(f"🚨 FALL DETECTED! Y={y_center:.2f}, Frames={FALL_CONSECUTIVE_FRAMES}")
+            except Exception as e:
+                print(f"❌ Fall alert error: {e}")
+    
+    # Recovery detection: Logo back in upper area = person stood up
+    elif (fall_detected and 
+          y_center < 0.5 and  # Logo in upper half
+          downward_frame_count == 0):
+        
+        # RECOVERY!
+        fall_detected = False
+        
+        # Publish recovery
+        if mqtt_client:
+            try:
+                payload = {"fall": False}
+                mqtt_client.publish(MQTT_TOPIC_FALL, json.dumps(payload))
+                print(f"✅ RECOVERY! Person stood up, Y={y_center:.2f}")
+            except Exception as e:
+                print(f"❌ Recovery alert error: {e}")
+
+def check_fall_on_loss():
+    """
+    Check if logo disappeared due to fall (moving down then lost)
+    """
+    global logo_y_history, fall_detected, last_fall_alert
+    
+    current_time = time.time()
+    
+    # Check if we have recent history
+    if len(logo_y_history) < 2:
+        return
+    
+    # Check if logo was moving down before disappearing
+    recent_y = logo_y_history[-3:] if len(logo_y_history) >= 3 else logo_y_history
+    
+    # All recent positions should be in lower half and increasing
+    if (all(y > 0.5 for y in recent_y) and 
+        all(recent_y[i] < recent_y[i+1] for i in range(len(recent_y)-1)) and
+        current_time - last_fall_alert > FALL_COOLDOWN):
+        
+        # Logo was moving down and disappeared - likely fall!
+        fall_detected = True
+        last_fall_alert = current_time
+        
+        if mqtt_client:
+            try:
+                payload = {"fall": True}
+                mqtt_client.publish(MQTT_TOPIC_FALL, json.dumps(payload))
+                print(f"🚨 FALL DETECTED (logo lost)! Last Y={recent_y[-1]:.2f}")
+            except Exception as e:
+                print(f"❌ Fall alert error: {e}")
+        
+        # Clear history
+        logo_y_history.clear()
+        logo_timestamps.clear()
+
 def get_turn_duration(deviation):
     """Tính thời gian rẽ dựa trên độ lệch"""
     deviation = abs(deviation)
@@ -228,6 +359,7 @@ def track_logo(boxes, scores, frame_width, frame_height):
     
     if len(boxes) == 0:
         print("⚠️ No logo detected")
+        check_fall_on_loss()  # Check if lost due to fall
         send_command("STOP")
         return None
     
@@ -302,6 +434,9 @@ def track_logo(boxes, scores, frame_width, frame_height):
     
     else:
         command = "STOP"
+    
+    # Check for fall based on trajectory
+    check_fall_detection(obj_y_center, frame_height)
     
     # Publish vital signs when logo is detected
     publish_vitals()
