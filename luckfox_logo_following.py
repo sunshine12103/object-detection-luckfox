@@ -122,6 +122,12 @@ downward_frame_count = 0     # Count consecutive downward movements
 last_fall_alert = 0          # Timestamp of last fall alert
 fall_detected = False        # Fall state flag
 
+# Search pattern tracking
+search_mode = False          # Whether in search mode
+search_count = 0             # Current search step counter
+MAX_SEARCH_STEPS = 50        # Maximum number of search attempts
+SEARCH_STEP_DELAY = 0.3      # Delay between search steps (seconds)
+
 # ============== HELPER FUNCTIONS ==============
 def letterbox(img, new_shape=(640, 640)):
     """Resize with padding"""
@@ -352,16 +358,41 @@ def get_turn_duration(deviation):
 
 def track_logo(boxes, scores, frame_width, frame_height):
     """
-    Distance-based tracking logic
+    Distance-based tracking logic with search pattern
     Estimate distance from bbox height, maintain 1m target distance
+    If logo lost: search pattern (turn right 50 times)
     """
     global x_deviation, y_max
+    global search_mode, search_count
     
     if len(boxes) == 0:
-        print("⚠️ No logo detected")
-        check_fall_on_loss()  # Check if lost due to fall
-        send_command("STOP")
+        # Logo not detected - activate search mode
+        if not search_mode:
+            search_mode = True
+            search_count = 0
+            print("🔍 Logo lost! Starting search pattern...")
+        
+        if search_count < MAX_SEARCH_STEPS:
+            # Search pattern: turn right to scan area
+            print(f"🔍 Search step {search_count + 1}/{MAX_SEARCH_STEPS} - Turning right...")
+            send_command("RIGHT50")
+            search_count += 1
+            time.sleep(SEARCH_STEP_DELAY)
+        else:
+            # Give up after 50 attempts
+            print("❌ Search failed - Logo not found after 50 turns")
+            send_command("STOP")
+            search_mode = False
+            search_count = 0
+            check_fall_on_loss()  # Check if lost due to fall
+        
         return None
+    
+    # Logo found! Reset search mode
+    if search_mode:
+        print("✅ Logo found during search!")
+        search_mode = False
+        search_count = 0
     
     # Lấy logo có confidence cao nhất
     best_idx = np.argmax(scores)
@@ -499,11 +530,8 @@ try:
                     boxes.append([x1, y1, x2, y2])
                     scores.append(confidence)
             
-            # TRACKING
-            if len(boxes) > 0:
-                tracking_info = track_logo(boxes, scores, w0, h0)
-            else:
-                send_command("STOP")
+            # TRACKING - Always call track_logo, it handles search pattern
+            tracking_info = track_logo(boxes, scores, w0, h0)
             
             inf_time = (time.time() - start_time) * 1000
             fps = 1000 / inf_time if inf_time > 0 else 0
