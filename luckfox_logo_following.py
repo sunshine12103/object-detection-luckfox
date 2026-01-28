@@ -99,13 +99,13 @@ TOLERANCE = 0.15       # Center tolerance (±15%)
 # Example: At 1m, logo height = 100px → pixel_to_distance = 1.0 / 100 = 0.01
 PIXEL_TO_DISTANCE = 0.11  # Calibration factor (adjust after testing)
 TARGET_DISTANCE = 1.0     # Target distance in meters (1m)
-STOP_DISTANCE = 0.5       # Stop when closer than 0.5m
+STOP_DISTANCE = 0.7       # Stop when closer than 0.7m
 MIN_LOGO_HEIGHT = 20      # Minimum logo height in pixels to track
 
 SKIP_FRAMES = 2
 frame_count = 0
 fps_list = []
-
+    
 # Tracking variables
 x_deviation = 0
 y_max = 0
@@ -125,6 +125,7 @@ fall_detected = False        # Fall state flag
 # Search pattern tracking
 search_mode = False          # Whether in search mode
 search_count = 0             # Current search step counter
+last_turn_direction = "RIGHT"  # Track last turn direction (LEFT/RIGHT)
 MAX_SEARCH_STEPS = 50        # Maximum number of search attempts
 SEARCH_STEP_DELAY = 0.3      # Delay between search steps (seconds)
 
@@ -358,24 +359,24 @@ def get_turn_duration(deviation):
 
 def track_logo(boxes, scores, frame_width, frame_height):
     """
-    Distance-based tracking logic with search pattern
+    Distance-based tracking logic with intelligent search pattern
     Estimate distance from bbox height, maintain 1m target distance
-    If logo lost: search pattern (turn right 50 times)
+    If logo lost: continue turning in last direction (LEFT/RIGHT)
     """
     global x_deviation, y_max
-    global search_mode, search_count
+    global search_mode, search_count, last_turn_direction
     
     if len(boxes) == 0:
         # Logo not detected - activate search mode
         if not search_mode:
             search_mode = True
             search_count = 0
-            print("🔍 Logo lost! Starting search pattern...")
+            print(f"🔍 Logo lost! Starting search - turning {last_turn_direction}...")
         
         if search_count < MAX_SEARCH_STEPS:
-            # Search pattern: turn right to scan area
-            print(f"🔍 Search step {search_count + 1}/{MAX_SEARCH_STEPS} - Turning right...")
-            send_command("RIGHT50")
+            # Search pattern: continue in last turn direction
+            print(f"🔍 Search step {search_count + 1}/{MAX_SEARCH_STEPS} - {last_turn_direction}...")
+            send_command(f"{last_turn_direction}50")
             search_count += 1
             time.sleep(SEARCH_STEP_DELAY)
         else:
@@ -431,15 +432,15 @@ def track_logo(boxes, scores, frame_width, frame_height):
     
     # 1. Check if too close (< STOP_DISTANCE)
     if estimated_distance < STOP_DISTANCE:
-        print(f"🛑 Too close ({estimated_distance:.2f}m < {STOP_DISTANCE}m) - STOPPING")
-        send_command("STOP")
-        command = "STOP"
+        print(f"🛑 Too close ({estimated_distance:.2f}m < {STOP_DISTANCE}m) - BACKWARD")
+        send_command("BACKWARD")
+        command = "BACKWARD"
     
     # 2. Logo centered → move forward or maintain distance
     elif abs(x_deviation) < TOLERANCE:
         
         if estimated_distance < TARGET_DISTANCE * 0.9:
-            # Too close to target - stop
+            # Too close to target - move backward
             print(f"✋ At target distance ({estimated_distance:.2f}m) - STOPPING")
             send_command("STOP")
             command = "STOP"
@@ -455,6 +456,7 @@ def track_logo(boxes, scores, frame_width, frame_height):
         print(f"⬅️ LEFT ({turn_ms}ms) | Dist: {estimated_distance:.2f}m")
         send_command(f"LEFT{turn_ms}")
         command = "LEFT"
+        last_turn_direction = "LEFT"  # Remember turn direction
     
     # 4. Logo lệch trái → rẽ phải
     elif x_deviation < -TOLERANCE:
@@ -462,6 +464,7 @@ def track_logo(boxes, scores, frame_width, frame_height):
         print(f"➡️ RIGHT ({turn_ms}ms) | Dist: {estimated_distance:.2f}m")
         send_command(f"RIGHT{turn_ms}")
         command = "RIGHT"
+        last_turn_direction = "RIGHT"  # Remember turn direction
     
     else:
         command = "STOP"
