@@ -1,15 +1,3 @@
-
-#!/usr/bin/python3
-"""
-Logo Following Robot - Luckfox Side
-Tương tự human_following nhưng theo logo TDTU
-
-Thuật toán:
-- Detect logo trong frame
-- Tính deviation từ center
-- Gửi lệnh điều khiển qua UART sang Arduino:
-  FORWARD, LEFT, RIGHT, STOP
-"""
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -36,7 +24,11 @@ MQTT_PORT = 1883
 MQTT_TOPIC_VITALS = "ambulance/vitals"
 MQTT_TOPIC_VEHICLE = "ambulance/vehicle"
 MQTT_TOPIC_FALL = "ambulance/fall"
+MQTT_TOPIC_CONTROL = "ambulance/control"
 MQTT_PUBLISH_INTERVAL = 2.0  # Seconds between publishes
+
+# Control flags
+robot_active = False  # Start in PAUSED state (safety)
 
 # Fall Detection Config
 FALL_VELOCITY_THRESHOLD = 0.15  # Vertical velocity threshold (normalized/sec) - lowered for sitting
@@ -48,15 +40,42 @@ FALL_COOLDOWN = 5.0             # Seconds between fall alerts
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print(f"✅ MQTT connected to {MQTT_BROKER}:{MQTT_PORT}")
+        # Subscribe to control topic
+        client.subscribe(MQTT_TOPIC_CONTROL)
+        print(f"📡 Subscribed to {MQTT_TOPIC_CONTROL}")
     else:
         print(f"❌ MQTT connection failed, rc={rc}")
 
+def on_message(client, userdata, msg):
+    global robot_active
+    try:
+        topic = msg.topic
+        payload = msg.payload.decode().strip().lower()
+        
+        if topic == MQTT_TOPIC_CONTROL:
+            print(f"📩 Control command received: {payload}")
+            
+            if payload == "start":
+                robot_active = True
+                print("🟢 ROBOT ACTIVATED")
+            elif payload == "stop":
+                robot_active = False
+                print("🔴 ROBOT STOPPED")
+                # Immediate stop for safety
+                send_command("STOP")
+                
+    except Exception as e:
+        print(f"❌ Error processing message: {e}")
+
 def on_publish(client, userdata, mid):
-    print(f"📤 MQTT published: {userdata}")
+    # reduce log spam
+    pass
+    # print(f"📤 MQTT published: {userdata}")
 
 # Setup MQTT client
 mqtt_client = mqtt.Client()
 mqtt_client.on_connect = on_connect
+mqtt_client.on_message = on_message
 mqtt_client.on_publish = on_publish
 
 try:
@@ -99,13 +118,13 @@ TOLERANCE = 0.15       # Center tolerance (±15%)
 # Example: At 1m, logo height = 100px → pixel_to_distance = 1.0 / 100 = 0.01
 PIXEL_TO_DISTANCE = 0.11  # Calibration factor (adjust after testing)
 TARGET_DISTANCE = 1.0     # Target distance in meters (1m)
-STOP_DISTANCE = 0.7       # Stop when closer than 0.7m
+STOP_DISTANCE = 0.5       # Stop when closer than 0.5m
 MIN_LOGO_HEIGHT = 20      # Minimum logo height in pixels to track
 
 SKIP_FRAMES = 2
 frame_count = 0
 fps_list = []
-    
+
 # Tracking variables
 x_deviation = 0
 y_max = 0
@@ -432,15 +451,15 @@ def track_logo(boxes, scores, frame_width, frame_height):
     
     # 1. Check if too close (< STOP_DISTANCE)
     if estimated_distance < STOP_DISTANCE:
-        print(f"🛑 Too close ({estimated_distance:.2f}m < {STOP_DISTANCE}m) - BACKWARD")
-        send_command("BACKWARD")
-        command = "BACKWARD"
+        print(f"🛑 Too close ({estimated_distance:.2f}m < {STOP_DISTANCE}m) - STOPPING")
+        send_command("STOP")
+        command = "STOP"
     
     # 2. Logo centered → move forward or maintain distance
     elif abs(x_deviation) < TOLERANCE:
         
         if estimated_distance < TARGET_DISTANCE * 0.9:
-            # Too close to target - move backward
+            # Too close to target - stop
             print(f"✋ At target distance ({estimated_distance:.2f}m) - STOPPING")
             send_command("STOP")
             command = "STOP"
@@ -493,13 +512,33 @@ print("Press 'q' to quit\n")
 
 # ============== MAIN LOOP ==============
 try:
+    print("Waiting for start command...")
+    
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("❌ Failed to grab frame")
             break
-        
-        frame_count += 1
+            
         h0, w0 = frame.shape[:2]
+            
+        # MQTT Control Check
+        if not robot_active:
+            # Show paused status
+            cv2.putText(frame, "PAUSED - WAITING FOR START", (50, 240),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.imshow('Logo Following Robot', frame)
+            
+            # Check for quit
+            if cv2.waitKey(100) & 0xFF == ord('q'):
+                break
+            continue
+
+        # Pre-process
+        # The letterbox function returns img, ratio, (dw, dh).
+        # We need all three for post-processing.
+        # So, we call it here and store the results.
+        img_preprocessed, ratio, (dw, dh) = letterbox(frame, (img_size, img_size))
         tracking_info = None
         
         # Process every Nth frame
